@@ -52,3 +52,6 @@
 [submodule "corev_apu/fpga/src/gpio"]
 	path = corev_apu/fpga/src/gpio
 	url = https://github.com/pulp-platform/gpio.git
+[submodule "corev_apu/cycle_accurate_iopmp_model"]
+	path = corev_apu/cycle_accurate_iopmp_model
+	url = https://github.com/gullahmed1/cycle_accurate_iopmp_ref_model.git
