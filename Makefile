@@ -32,6 +32,8 @@ verilator             ?= verilator
 target-options ?=
 # additional defines
 defines        ?=
+defines += +CFG_IOPMP_SRCMD_FMT_0
+defines += +CFG_IOPMP_MDCFG_FMT_0
 # test name for torture runs (binary name)
 test-location  ?= output/test
 # set to either nothing or -log
@@ -68,6 +70,8 @@ endif
 spike-tandem ?= $(SPIKE_TANDEM)
 
 SPIKE_INSTALL_DIR     ?= $(root-dir)/tools/spike
+
+iopmp_simulation_only ?= 1
 
 # setting additional xilinx board parameters for the selected board
 ifeq ($(BOARD), genesys2)
@@ -124,6 +128,15 @@ ariane_pkg := \
               corev_apu/tb/ariane_soc_pkg.sv                         \
               corev_apu/riscv-dbg/src/dm_pkg.sv                      \
               corev_apu/tb/ariane_axi_soc_pkg.sv
+
+ifeq ($(iopmp_simulation_only),1)
+	ariane_pkg += \
+		 corev_apu/cycle_accurate_iopmp_model/include/config_cycle_acc_pkg.sv		\
+		 corev_apu/cycle_accurate_iopmp_model/include/c_model_pkg.sv				\
+		 corev_apu/cycle_accurate_iopmp_model/include/ahb_lite_c_pkg.sv			\
+		 corev_apu/cycle_accurate_iopmp_model/include/axi_c_pkg.sv
+endif
+
 ariane_pkg := $(addprefix $(root-dir), $(ariane_pkg))
 
 # Test packages
@@ -210,25 +223,19 @@ src :=  $(if $(spike-tandem),verif/tb/core/uvma_core_cntrl_pkg.sv)              
         corev_apu/tb/common/uart.sv                                                  \
         corev_apu/tb/common/SimDTM.sv                                                \
         corev_apu/tb/common/SimJTAG.sv                                               \
-        corev_apu/instr_tracing/ITI/cva6_iti/iti.sv                                  \
-        corev_apu/instr_tracing/ITI/cva6_iti/block_retirement.sv                     \
-        corev_apu/instr_tracing/ITI/cva6_iti/single_retirement.sv                    \
-        corev_apu/instr_tracing/ITI/cva6_iti/itype_detector.sv                       \
-        vendor/pulp-platform/common_cells/src/counter.sv                             \
-        vendor/pulp-platform/common_cells/src/sync.sv                                \
-        vendor/pulp-platform/common_cells/src/sync_wedge.sv                          \
-        vendor/pulp-platform/common_cells/src/edge_detect.sv                         \
-        corev_apu/instr_tracing/rv_tracer-main/rtl/lzc.sv                            \
-        corev_apu/instr_tracing/rv_tracer-main/rtl/te_branch_map.sv                  \
-        corev_apu/instr_tracing/rv_tracer-main/rtl/te_filter.sv                      \
-        corev_apu/instr_tracing/rv_tracer-main/rtl/te_packet_emitter.sv              \
-        corev_apu/instr_tracing/rv_tracer-main/rtl/te_priority.sv                    \
-        corev_apu/instr_tracing/rv_tracer-main/rtl/te_reg.sv                         \
-        corev_apu/instr_tracing/rv_tracer-main/rtl/te_resync_counter.sv              \
-        corev_apu/instr_tracing/rv_tracer-main/rtl/rv_tracer.sv                      \
-        vendor/pulp-platform/common_cells/src/fifo_v3.sv                             \
-        corev_apu/instr_tracing/DPTI/slicer_DPTI.sv                                  \
-        corev_apu/instr_tracing/rv_encapsulator-main/src/rtl/encapsulator.sv
+        core/cva6_iti/instr_to_trace.sv                                              \
+        core/cva6_iti/iti.sv                                                         \
+        core/cva6_iti/itype_detector.sv
+
+ifeq ($(iopmp_simulation_only),1)
+src += \
+		corev_apu/cycle_accurate_iopmp_model/common/common_macros.svh				 \
+		corev_apu/cycle_accurate_iopmp_model/common/fifo_queue.sv					 \
+		corev_apu/cycle_accurate_iopmp_model/common/dma_engine.sv					 \
+		corev_apu/cycle_accurate_iopmp_model/common/axi2ahb_bridge_top.sv			 \
+		corev_apu/cycle_accurate_iopmp_model/iopmp_c_model.sv
+endif
+
 src := $(addprefix $(root-dir), $(src))
 
 copro_src := core/cvxif_example/include/cvxif_instr_pkg.sv \
@@ -237,9 +244,6 @@ copro_src := $(addprefix $(root-dir), $(copro_src))
 
 uart_src := $(wildcard corev_apu/fpga/src/apb_uart/src/vhdl_orig/*.vhd)
 uart_src := $(addprefix $(root-dir), $(uart_src))
-
-dpti_src := $(wildcard corev_apu/instr_tracing/DPTI/*.vhd)
-dpti_src := $(addprefix $(root-dir), $(dpti_src))
 
 uart_src_sv:= corev_apu/fpga/src/apb_uart/src/slib_clock_div.sv     \
               corev_apu/fpga/src/apb_uart/src/slib_counter.sv       \
@@ -295,12 +299,12 @@ altera_filter := corev_apu/tb/ariane_testharness.sv \
 								corev_apu/riscv-dbg/src/dmi_jtag_tap.sv \
 								corev_apu/riscv-dbg/src/dmi_jtag.sv \
 								corev_apu/fpga/src/apb_uart/src/reg_uart_wrap.sv
-								
+
 altera_filter := $(addprefix $(root-dir), $(altera_filter))
 xil_debug_filter = $(addprefix $(root-dir), corev_apu/riscv-dbg/src/dm_obi_top.sv)
 xil_debug_filter += $(addprefix $(root-dir), corev_apu/riscv-dbg/src/dm_pkg.sv)
 xil_debug_filter += $(addprefix $(root-dir), corev_apu/riscv-dbg/src/dmi_vjtag_tap.sv)
-xil_debug_filter += $(addprefix $(root-dir), corev_apu/riscv-dbg/src/dmi_vjtag.sv)						
+xil_debug_filter += $(addprefix $(root-dir), corev_apu/riscv-dbg/src/dmi_vjtag.sv)
 src := $(filter-out $(xil_debug_filter), $(src))
 
 fpga_src += corev_apu/fpga/src/bootrom/bootrom_$(XLEN).sv
@@ -336,7 +340,6 @@ incdir := $(CVA6_REPO_DIR)/vendor/pulp-platform/common_cells/include/ $(CVA6_REP
           $(CVA6_REPO_DIR)/verif/core-v-verif/lib/uvm_agents/uvma_core_cntrl/ \
           $(CVA6_REPO_DIR)/verif/tb/core/ \
           $(CVA6_REPO_DIR)/core/include/ \
-          $(CVA6_REPO_DIR)/corev_apu/instr_tracing/ITI/include \
           $(SPIKE_INSTALL_DIR)/include/disasm/
 
 # Compile and sim flags
@@ -578,6 +581,8 @@ xrun_comp: $(dpi-library)/xrun_ariane_dpi.so
 	cd $(XRUN_RESULTS_DIR) && $(XRUN)   \
 		+permissive		    \
 		$(XRUN_COMP)                \
+		+define+CFG_IOPMP_SRCMD_FMT_0 \
+		+define+CFG_IOPMP_MDCFG_FMT_0 \
 		-l $(XRUN_COMPL_LOG)        \
 		+permissive-off		    \
 		-elaborate
@@ -672,8 +677,11 @@ verilate_command := $(verilator) --no-timing verilator_config.vlt               
                     $(filter-out %.vhd, $(ariane_pkg))                                                           \
                     $(filter-out core/fpu_wrap.sv, $(filter-out %.vhd, $(filter-out %_config_pkg.sv, $(src))))   \
                     +define+$(defines)$(if $(TRACE_FAST),+VM_TRACE)$(if $(TRACE_COMPACT),+VM_TRACE+VM_TRACE_FST) \
+                    +define+CFG_IOPMP_SRCMD_FMT_0                                                                \
+                    +define+CFG_IOPMP_MDCFG_FMT_0                                                                \
                     corev_apu/tb/common/mock_uart.sv                                                             \
                     +incdir+corev_apu/axi_node                                                                   \
+					+incdir+corev_apu/cycle_accurate_iopmp_model/iopmp_ref_model/include						 \
                     $(if $(verilator_threads), --threads $(verilator_threads))                                   \
                     --unroll-count 256                                                                           \
                     -Wall                                                                                        \
@@ -700,7 +708,7 @@ verilate_command := $(verilator) --no-timing verilator_config.vlt               
                     --threads-dpi none                                                                           \
                     --Mdir $(ver-library) -O3                                                                    \
                     --exe corev_apu/tb/ariane_tb.cpp corev_apu/tb/dpi/SimDTM.cc corev_apu/tb/dpi/SimJTAG.cc      \
-                    corev_apu/tb/dpi/remote_bitbang.cc corev_apu/tb/dpi/msim_helper.cc
+                    corev_apu/tb/dpi/remote_bitbang.cc corev_apu/tb/dpi/msim_helper.cc corev_apu/cycle_accurate_iopmp_model/iopmp_ref_model/src/*.c
 
 # User Verilator, at some point in the future this will be auto-generated
 verilate:
@@ -809,10 +817,9 @@ fpga_filter += $(addprefix $(root-dir), core/cache_subsystem/hpdcache/rtl/src/co
 $(addprefix $(root-dir), corev_apu/fpga/src/bootrom/bootrom_$(XLEN).sv):
 	$(MAKE) -C corev_apu/fpga/src/bootrom BOARD=$(BOARD) XLEN=$(XLEN) PLATFORM=$(PLATFORM) bootrom_$(XLEN).sv
 
-fpga: $(ariane_pkg) $(src) $(fpga_src) $(uart_src) $(dpti_src) $(src_flist)
+fpga: $(ariane_pkg) $(src) $(fpga_src) $(uart_src) $(src_flist)
 	@echo "[FPGA] Generate sources"
 	@echo read_vhdl        {$(uart_src)}    > corev_apu/fpga/scripts/add_sources.tcl
-	@echo read_vhdl        {$(dpti_src)}   >> corev_apu/fpga/scripts/add_sources.tcl
 	@echo read_verilog -sv {$(ariane_pkg)} >> corev_apu/fpga/scripts/add_sources.tcl
 	@echo read_verilog -sv {$(filter-out $(fpga_filter), $(src_flist))}		>> corev_apu/fpga/scripts/add_sources.tcl
 	@echo read_verilog -sv {$(filter-out $(fpga_filter), $(src))} 	   >> corev_apu/fpga/scripts/add_sources.tcl

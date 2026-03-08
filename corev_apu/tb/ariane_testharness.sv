@@ -508,7 +508,9 @@ module ariane_testharness #(
     '{ idx: ariane_soc::SPI,      start_addr: ariane_soc::SPIBase,      end_addr: ariane_soc::SPIBase + ariane_soc::SPILength           },
     '{ idx: ariane_soc::Ethernet, start_addr: ariane_soc::EthernetBase, end_addr: ariane_soc::EthernetBase + ariane_soc::EthernetLength },
     '{ idx: ariane_soc::GPIO,     start_addr: ariane_soc::GPIOBase,     end_addr: ariane_soc::GPIOBase + ariane_soc::GPIOLength         },
-    '{ idx: ariane_soc::DRAM,     start_addr: ariane_soc::DRAMBase,     end_addr: ariane_soc::DRAMBase + ariane_soc::DRAMLength         }
+    '{ idx: ariane_soc::DRAM,     start_addr: ariane_soc::DRAMBase,     end_addr: ariane_soc::DRAMBase + ariane_soc::DRAMLength         },
+    '{ idx: ariane_soc::IOPMP,    start_addr: ariane_soc::IOPMPBase,    end_addr: ariane_soc::IOPMPBase + ariane_soc::IOPMPLength       },
+    '{ idx: ariane_soc::DMA,      start_addr: ariane_soc::DMABase,      end_addr: ariane_soc::DMABase + ariane_soc::DMALength           }
   };
 
   localparam axi_pkg::xbar_cfg_t AXI_XBAR_CFG = '{
@@ -598,6 +600,9 @@ module ariane_testharness #(
     .spi       ( master[ariane_soc::SPI]      ),
     .ethernet  ( master[ariane_soc::Ethernet] ),
     .timer     ( master[ariane_soc::Timer]    ),
+    .iopmp_cfg ( master[ariane_soc::IOPMP]    ),
+    .iopmp_ip  ( slave[2]                     ),
+    .iopmp_dma ( master[ariane_soc::DMA]      ),
     .irq_o     ( irqs                         ),
     .rx_i      ( rx                           ),
     .tx_o      ( tx                           ),
@@ -682,112 +687,19 @@ module ariane_testharness #(
         .CAUSE_LEN  (iti_pkg::CAUSE_LEN),
         .ITYPE_LEN (iti_pkg::ITYPE_LEN),
         .IRETIRE_LEN (iti_pkg::IRETIRE_LEN),
-        .block_mode(0),
         .rvfi_to_iti_t(rvfi_to_iti_t),
         .iti_to_encoder_t(iti_to_encoder_t)
-    ) i_cva6_iti (
+    ) i_iti (
         .clk_i  (clk_i),
         .rst_ni (ndmreset_n),
         // inputs from rvfi
         .valid_i(rvfi_to_iti.valid),
         .rvfi_to_iti_i(rvfi_to_iti),
+        // outputs for the encoder module TODO
         .valid_o(),
         .iti_to_encoder_o(iti_to_encoder)
     );
 
-    logic                    packet_valid;
-    te_pkg::it_packet_type_e [0:0] packet_type;
-    logic [te_pkg::P_LEN-1:0] packet_length;
-    logic [te_pkg::PAYLOAD_LEN-1:0] packet_payload;
-
-    rv_tracer #(
-        .N(1),
-        .ONLY_BRANCHES(1)
-    ) i_encoder(
-        .clk_i               (clk_i),
-        .rst_ni              (rst_ni),
-        .valid_i             (iti_to_encoder.valid),
-        .itype_i             (iti_to_encoder.itype),
-        .cause_i             (iti_to_encoder.cause),
-        .tval_i              (iti_to_encoder.tval),
-        .priv_i              (iti_to_encoder.priv),
-        .iaddr_i             (iti_to_encoder.iaddr),
-        .iretire_i           (iti_to_encoder.iretire),
-        .ilastsize_i         (iti_to_encoder.ilastsize),
-        .time_i              (iti_to_encoder.cycles),
-        .tvec_i              ('0),
-        .epc_i               ('0),
-        .encapsulator_ready_i('1),
-        .paddr_i             ('0),
-        .pwrite_i            ('0),
-        .psel_i              ('0),
-        .penable_i           ('0),
-        .pwdata_i            ('0),
-        .packet_valid_o      (packet_valid),
-        .packet_type_o       (packet_type),
-        .packet_length_o     (packet_length),
-        .packet_payload_o    (packet_payload),
-        .stall_o             (),
-        .pready_o            (),
-        .prdata_o            ()
-    );
-
-    logic                           encap_valid;
-    encap_pkg::encap_fifo_entry_s   encap_fifo_entry_i;
-    encap_pkg::encap_fifo_entry_s   encap_fifo_entry_o;
-    logic                           encap_fifo_full;
-    logic                           encap_fifo_empty;
-    logic                           encap_fifo_pop;
-
-    encapsulator i_encapsulator (
-        .clk_i              (clk_i),
-        .valid_i            (packet_valid),
-        .packet_length_i    (packet_length),
-        .flow_i             ('0),
-        .timestamp_present_i('1),
-        //.srcid_i(),
-        .timestamp_i        (rvfi_to_iti.cycles),
-        //.type_i(),
-        .trace_payload_i    (packet_payload),
-        .valid_o            (encap_valid),
-        .encap_fifo_entry_o (encap_fifo_entry_i)
-    );
-
-    fifo_v3 # (
-        .DEPTH(16),
-        .dtype(encap_pkg::encap_fifo_entry_s)
-    ) i_fifo_encap (
-        .clk_i     (clk_i),
-        .rst_ni    (rst_ni),
-        .flush_i   ('0),
-        .testmode_i('0),
-        .full_o    (encap_fifo_full),
-        .empty_o   (encap_fifo_empty),
-        .usage_o   (),
-        .data_i    (encap_fifo_entry_i),
-        .push_i    (encap_valid),
-        .data_o    (encap_fifo_entry_o),
-        .pop_i     (encap_fifo_pop)
-    );
-    localparam DATA_LEN = 8;
-
-    logic                           slicer_valid;
-    logic [DATA_LEN-1:0]            slice;
-    logic [$clog2(DATA_LEN)-4:0]    valid_bytes;
-
-    slicer_DPTI #(
-        .SLICE_LEN(DATA_LEN),
-        .NO_TIME ('0)
-    ) i_slicer (
-        .clk_i             (clk_i),
-        .rst_ni            (rst_ni),
-        .valid_i           (!encap_fifo_empty),
-        .encap_fifo_entry_i(encap_fifo_entry_o),
-        .fifo_full_i       ('0), // usrFull DPTI in ariane_xilinx
-        .valid_o           (slicer_valid),
-        .slice_o           (slice),
-        .done_o            (encap_fifo_pop)
-    );
 
   cva6_rvfi #(
       .CVA6Cfg   (CVA6Cfg),
